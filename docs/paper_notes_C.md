@@ -1,5 +1,3 @@
-Author: Na
-
 1. Tìm hiểu chung
 
 - Phân đoạn tổn thương da (điểm thuộc tổn thương hay thuộc da lành) bằng mạng nơ ron tích chập dựa trên kiến trúc U-Net, dùng dữ liệu trong cuộc thi ISIC Challenge 2018, chỉ số Jaccard đạt ngưỡng 77,7%
@@ -110,3 +108,5 @@ Author: Na
 | overfitting               | học thuộc tập huấn luyện                            |
 | ground truth              | nhãn chuẩn                                          |
 | ensemble                  | kết hợp nhiều mô hình                               |
+
+**Author: Na**
