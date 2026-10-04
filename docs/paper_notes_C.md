@@ -54,8 +54,7 @@
 # 5. Chiến lược phân loại
 
 - BestDice: chỉ giữ lại một mô hình có Dice cao nhất trên kiểm định và dùng riêng nó để dự đoán.
-- Ensemble: đưa một ảnh mới qua cả 3 mô hình, lấy 3 kết quả dự đoán rồi kết hợp thành một mask cuối cùng.
-- Pyramid Transfer: Tập train được chia thành 3 fold, gọi là A, B, C. Bài huấn luyện 3 lần, mỗi lần lấy một fold để kiểm định:
+- Ensemble: Tập train được chia thành 3 fold, gọi là A, B, C. Bài huấn luyện 3 lần, mỗi lần lấy một fold để kiểm định:
 
 | Mô hình   | Huấn luyện trên | Kiểm định trên |
 | :-------- | :-------------- | :------------- |
