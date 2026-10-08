@@ -34,3 +34,33 @@ class UNet34(nn.Module):
         b = self.layer4(s3)
         d = self.up4(b, s3); d = self.up3(d, s2); d = self.up2(d, s1); d = self.up1(d, s0); d = self.up0(d,x)
         return self.head(d)                                    # logits (N,1,H,W)
+    
+    
+BN = nn.BatchNorm2d
+
+
+def freeze_encoder(model: UNet34) -> None:
+    """Mapping notebook: freeze toàn encoder, nhưng BN encoder vẫn cho học ở frozen stage."""
+    for module in model.encoder_modules():
+        for m in module.modules():
+            for p in m.parameters(recurse=False):
+                p.requires_grad = isinstance(m, BN)
+
+
+def unfreeze(model: UNet34, freeze_bn: bool = True) -> None:
+    for p in model.parameters():
+        p.requires_grad = True
+    if freeze_bn:
+        for m in model.modules():
+            if isinstance(m, BN):
+                for p in m.parameters():
+                    p.requires_grad = False
+
+
+def set_train_mode(model: nn.Module, bn_frozen: bool) -> None:
+    model.train()
+    if bn_frozen:
+        for m in model.modules():
+            if isinstance(m, BN):
+                m.eval()
+    
