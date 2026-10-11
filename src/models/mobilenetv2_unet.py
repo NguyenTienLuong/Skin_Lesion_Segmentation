@@ -47,15 +47,15 @@ class MobileNetV2UNet(nn.Module):
         # Stage 1: /4  (kênh: 24)  -> features[2:4]
         # Stage 2: /8  (kênh: 32)  -> features[4:7]
         # Stage 3: /16 (kênh: 96)  -> features[7:14]
-        # Stage 4: /32 (kênh: 1280)-> features[14:19]
+        # Stage 4: /32 (kênh: 320)-> features[14:18]
         self.stage0 = backbone[0:2]   # 1/2
         self.stage1 = backbone[2:4]   # 1/4
         self.stage2 = backbone[4:7]   # 1/8
         self.stage3 = backbone[7:14]  # 1/16
-        self.stage4 = backbone[14:19] # 1/32
+        self.stage4 = backbone[14:18] # 1/32
 
         # 2. Định nghĩa các Decoder Blocks
-        self.dec4 = DecoderBlock(in_channels=1280, skip_channels=96, out_channels=256) # 1/32 -> 1/16
+        self.dec4 = DecoderBlock(in_channels=320, skip_channels=96, out_channels=256) # 1/32 -> 1/16
         self.dec3 = DecoderBlock(in_channels=256,  skip_channels=32, out_channels=128) # 1/16 -> 1/8
         self.dec2 = DecoderBlock(in_channels=128,  skip_channels=24, out_channels=64)  # 1/8  -> 1/4
         self.dec1 = DecoderBlock(in_channels=64,   skip_channels=16, out_channels=32)  # 1/4  -> 1/2
@@ -83,20 +83,8 @@ class MobileNetV2UNet(nn.Module):
         logits = self.final_conv(x)
         return logits
 
-    def set_encoder_freeze(self, freeze=True):
+    def encoder_modules(self):
         """
-        Quản lý Freeze/Unfreeze Encoder theo Protocol:
-        Khi unfreeze, giữ nguyên BatchNorm ở trạng thái eval mode (frozen statistics).
+        Để dùng chung freeze_encoder/unfreeze/set_train_mode của A.
         """
-        encoder_stages = [self.stage0, self.stage1, self.stage2, self.stage3, self.stage4]
-        for stage in encoder_stages:
-            for module in stage.modules():
-                # Đóng/mở gradient cho các trọng số
-                if hasattr(module, 'weight') and module.weight is not None:
-                    module.weight.requires_grad = not freeze
-                if hasattr(module, 'bias') and module.bias is not None:
-                    module.bias.requires_grad = not freeze
-                
-                # Giữ nguyên BatchNorm frozen dù unfreeze backbone
-                if isinstance(module, (nn.BatchNorm2d, nn.SyncBatchNorm)):
-                    module.eval()
+        return [self.stage0, self.stage1, self.stage2, self.stage3, self.stage4]

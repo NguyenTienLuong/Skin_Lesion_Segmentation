@@ -1,11 +1,14 @@
 import sys
 import os
 import torch
+import torch.nn as nn
+
 
 # Trỏ path ra thư mục gốc dự án để import được module trong src/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.mobilenetv2_unet import MobileNetV2UNet
+from src.models.unet34 import freeze_encoder, unfreeze, set_train_mode
 
 def test_mobilenetv2_unet_smoke():
     print("==================================================")
@@ -44,19 +47,22 @@ def test_mobilenetv2_unet_smoke():
     optimizer.step()
     print(f"     -> Loss: {loss.item():.4f} [PASS]")
 
-    # 5. Test Freeze / Unfreeze
+    # 5. Test Freeze / Unfreeze theo protocol của A
     print("[5/5] Test Freeze/Unfreeze Encoder...")
-    model.set_encoder_freeze(freeze=True)
-    assert not any(p.requires_grad for p in model.stage0.parameters()), "Loi Freeze Encoder!"
-    print("     -> Freeze Encoder: [PASS]")
+    convs = [m for s in model.encoder_modules() for m in s.modules() if isinstance(m, nn.Conv2d)]
+    bns = [m for s in model.encoder_modules() for m in s.modules() if isinstance(m, nn.BatchNorm2d)]
 
-    model.set_encoder_freeze(freeze=False)
-    assert all(p.requires_grad for p in model.stage0.parameters()), "Loi Unfreeze Encoder!"
-    print("     -> Unfreeze Encoder: [PASS]")
+    freeze_encoder(model)
+    assert not any(p.requires_grad for c in convs for p in c.parameters()), "Conv encoder chua frozen!"
+    assert all(p.requires_grad for b in bns for p in b.parameters()), "Frozen stage: BN phai con hoc!"
+    print("     -> Frozen stage: [PASS]")
 
-    print("==================================================")
-    print("         SMOKE TEST COMPLETED SUCCESSFULLY!       ")
-    print("==================================================")
+    unfreeze(model, freeze_bn=True)
+    set_train_mode(model, bn_frozen=True)
+    assert all(p.requires_grad for c in convs for p in c.parameters()), "Conv encoder chua unfreeze!"
+    assert not any(p.requires_grad for b in bns for p in b.parameters()), "BN phai bi khoa!"
+    assert not any(b.training for b in bns), "BN phai o eval mode!"
+    print("     -> Unfrozen stage (BN frozen): [PASS]")
 
 if __name__ == "__main__":
     test_mobilenetv2_unet_smoke()
