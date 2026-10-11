@@ -1,5 +1,5 @@
-__pycache__/, 
-*.pth, 
-data/.
+__pycache__/
+*.pth
+data/
 experiments/smoke/
 checkpoints/smoke/
