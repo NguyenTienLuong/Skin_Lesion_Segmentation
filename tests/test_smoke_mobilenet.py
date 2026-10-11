@@ -64,5 +64,11 @@ def test_mobilenetv2_unet_smoke():
     assert not any(b.training for b in bns), "BN phai o eval mode!"
     print("     -> Unfrozen stage (BN frozen): [PASS]")
 
+    print("==================================================")
+    print("         SMOKE TEST COMPLETED SUCCESSFULLY!       ")
+    print("==================================================")
 if __name__ == "__main__":
     test_mobilenetv2_unet_smoke()
+
+    
+#    python tests/test_smoke_mobilenet.py > logs/smoke_test_mobilenetv2.log 2>&1
