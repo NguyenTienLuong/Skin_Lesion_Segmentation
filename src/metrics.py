@@ -34,8 +34,8 @@ def hd95(pred, gt):
     if not pred.any() or not gt.any():
         return np.nan
     sp, sg = _surface(pred), _surface(gt)
-    d_p_to_g = distance_transform_edt(~sg)[sp]    # khoảng cách từ biên dự đoán tới biên nhãn
-    d_g_to_p = distance_transform_edt(~sp)[sg]    # và ngược lại
+    d_p_to_g = distance_transform_edt(~sg)[sp]    
+    d_g_to_p = distance_transform_edt(~sp)[sg]    
     return float(max(np.percentile(d_p_to_g, 95), np.percentile(d_g_to_p, 95)))
 
 METRICS = {"jaccard": jaccard, "dice": dice, "sensitivity": sensitivity, "hd95": hd95}
