@@ -25,8 +25,8 @@ def normalize_image_tf():
         ToTensorV2(),
     ]
 
-def gray_world(image):
-    """Cân bằng màu theo giả định Gray World."""
+def gray_world(image, **kwargs):
+    """Cân bằng màu Gray World."""
     img = image.astype(np.float32)
     channel_means = img.mean(axis=(0, 1))
     gray_mean = channel_means.mean()
