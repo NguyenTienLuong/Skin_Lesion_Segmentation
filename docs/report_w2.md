@@ -90,25 +90,9 @@ $$x' = \mathrm{clip}\big(\alpha\, x + \beta \cdot 255,\ 0,\ 255\big),\quad \alph
 
 ---
 
-## 4. Module `data_pipeline.py`
+## 4. Module `metrics.py`
 
-| Thành phần            | Chức năng                                                                                                                                                       |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ROOT`, `COLS`        | Thư mục gốc dữ liệu; lấy các cột `image_path`, `mask_path`, `pair_valid`                                                                                        |
-| `seed_everything(42)` | Cố định seed cho `random`, `numpy`, `torch`                                                                                                                     |
-| `load_manifest(path)` | Đọc CSV                                                                                                                                                         |
-| `read_image`          | `cv2.imread` (BGR) → đổi sang **RGB**, trả `uint8 HxWx3`                                                                                                        |
-| `read_mask`           | Đọc ảnh xám, ngưỡng $m > 127$ → 0/1, trả `uint8 HxW`. Làm **trước** pipeline để sau resize/affine mask vẫn chỉ có 0 và 1                                        |
-| `ISICSegDataset`      | Trả `(ảnh (3,H,W), mask (1,H,W))` kiểu float; `unsqueeze(0)` thêm chiều kênh cho mask. Dùng chung cho cả ba tập, chỉ khác cờ `train`                            |
-| `make_loader`         | `train=True`: augmentation + `shuffle=True` + `drop_last=True` (tránh batch lẻ làm BatchNorm kém ổn định). `train=False`: chỉ tiền xử lý, không xáo, giữ thứ tự |
-| `check_no_leak`       | Kiểm tra 3 tập không trùng `image_id`                                                                                                                           |
-| `sanity_check`        | Kiểm tra nhanh cho 8 mẫu: shape đúng? mask chỉ có 0/1 sau augmentation?                                                                                         |
-
----
-
-## 5. Module `metrics.py`
-
-### 5.1 Định nghĩa
+### 4.1 Định nghĩa
 
 Gọi $P$ là tập pixel dự đoán là tổn thương, $G$ là tập pixel nhãn chuẩn:
 
@@ -139,7 +123,7 @@ $$\mathrm{HD95} = \max\Big(\ P_{95}\{\, d(p, S_G) \,\}_{p \in S_P},\ \ P_{95}\{\
 - Jaccard, Dice, Sensitivity: **cao là tốt**.
 - HD95: **thấp là tốt**.
 
-### 5.2 Quy ước các trường hợp đặc biệt
+### 4.2 Quy ước các trường hợp đặc biệt
 
 | Trường hợp                          | Jaccard | Dice | Sensitivity | HD95            |
 | ----------------------------------- | ------- | ---- | ----------- | --------------- |
@@ -148,37 +132,10 @@ $$\mathrm{HD95} = \max\Big(\ P_{95}\{\, d(p, S_G) \,\}_{p \in S_P},\ \ P_{95}\{\
 | Chỉ GT rỗng (dự đoán có vùng)       | 0,0     | 0,0  | NaN         | NaN             |
 | Hai vùng không giao nhau            | 0,0     | 0,0  | 0,0         | giá trị hữu hạn |
 
-### 5.3 Ví dụ
+### 4.3 Ví dụ
 
 GT 1000 px, dự đoán 900 px, trùng 800 px. Khi đó $TP = 800$, $FP = 100$, $FN = 200$:
 
 $$J = \frac{800}{1100} = 0.727,\qquad D = \frac{1600}{1900} = 0.842,\qquad \mathrm{Sens} = \frac{800}{1000} = 0.8$$
 
 Kiểm tra quan hệ: $D = \frac{2 \cdot 0.727}{1.727} = 0.842$.
-
-## 6. Module `evaluate.py`
-
-### 6.1 Giao thức đánh giá
-
-- Lưới đánh giá chung: `EVAL_SIZE = 256`. Loader đánh giá luôn tạo ở `size=256`.
-- Ngưỡng: `THR = 0.5`.
-- Với model chạy ở `input_size` khác 256: ảnh được thu nhỏ bằng bilinear, model cho **logit**, logit được phóng lên 256×256 rồi mới sigmoid và lấy ngưỡng:
-
-$$p_i = \sigma(z_i) = \frac{1}{1 + e^{-z_i}},\qquad \hat{y}_i = \mathbb{1}\big[p_i > 0.5\big] = \mathbb{1}[z_i > 0]$$
-
-### 6.2 Tổng hợp: per-image rồi macro mean
-
-`evaluate_per_image` trả DataFrame mỗi dòng một ảnh (`image_id`, `jaccard`, `dice`, `sensitivity`, `hd95`), có `assert` số ảnh khớp manifest. Sau đó `summarize` lấy trung bình theo ảnh: với chỉ số $M$ và $N_{def}$ ảnh có giá trị xác định:
-
-$$\bar{M} = \frac{1}{N_{def}} \sum_{i:\ M_i\ \text{xác định}} M_i$$
-
-Mỗi ảnh có trọng số bằng nhau. `summarize` trả thêm `{metric}_n_undefined` là số ảnh `NaN` của từng chỉ số.
-
-### 6.3 Log kiểm chứng (`save_run`)
-
-Sinh hai file trong thư mục kết quả:
-
-- `{run_name}_{split}_per_image.csv`: mỗi dòng một ảnh, gồm `image_id` và 4 chỉ số.
-- `{run_name}_{split}_summary.json`: gồm `run_name`, `split`, `timestamp`, `config` (size, lr, epochs, seed, augmentation...), `eval_protocol` (lưới 256, ngưỡng 0,5, tổng hợp per-image → macro mean), `checkpoint` (đường dẫn và **SHA-256** của file trọng số) và `summary`.
-
----
