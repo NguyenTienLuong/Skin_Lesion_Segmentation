@@ -4,12 +4,11 @@
 
 Colab: https://colab.research.google.com/drive/159ZWRb8gGIy9cG9D4kHeVsCL0tX1cfEp?usp=sharing
 
-| #   | Công việc                                                                             | File                   |
-| --- | ------------------------------------------------------------------------------------- | ---------------------- |
-| 1   | Pipeline tiền xử lý, tăng cường (augmentation) online và chuẩn hóa                    | `src/augmentation.py`  |
-| 2   | Pipeline dữ liệu: đọc manifest, Dataset, DataLoader, kiểm tra rò rỉ và kiểm tra nhanh | `src/data_pipeline.py` |
-| 3   | Bộ chỉ số đánh giá: raw Jaccard, Dice, Sensitivity, HD95                              | `src/metrics.py`       |
-| 4   | Quy trình đánh giá theo từng ảnh, tổng hợp và lưu log kiểm chứng                      | `src/evaluate.py`      |
+| #   | Công việc                                                         | File               |
+| --- | ----------------------------------------------------------------- | ------------------ |
+| 1   | Tiền xử lý, tăng cường online và chuẩn hóa                        | `augmentation.py`  |
+| 2   | Pipeline xử lý trước khi đưa vào mô hình cho ảnh và mask từng tập | `data_pipeline.py` |
+| 3   | Bộ chỉ số đánh giá: raw Jaccard, Dice, Sensitivity, HD95          | `metrics.py`       |
 
 ## 2. Tổng quan pipeline
 
