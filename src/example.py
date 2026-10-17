@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from data_pipeline import (
+from Skin_Lesion_Segmentation.src.data.data_pipeline import (
     get_train_transform,
     get_val_transform,
     get_test_transform,

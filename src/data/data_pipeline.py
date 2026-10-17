@@ -1,7 +1,7 @@
 
 import albumentations as A
 
-from augmentation import (
+from Skin_Lesion_Segmentation.src.data.augmentation import (
     resize_tf,
     normalize_image_tf,
     gray_world,
