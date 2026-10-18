@@ -1,0 +1,44 @@
+seed: 42
+model:
+  name: unet34
+  pretrained: true
+
+data:
+  tuning_split: data/splits/tuning_split.csv
+  folds_3: data/splits/folds_3.csv
+  heldout_test: data/splits/heldout_test.csv
+  num_workers: 2
+
+augmentation:
+  degrees: 44.0
+  zoom_max: 1.05
+  brightness: 0.2
+  contrast: 0.2
+
+optimizer:
+  name: Adam
+  weight_decay: 0.0
+
+loss:
+  name: BCE
+
+training:
+  sizes: [128, 256]
+  batch_size: 8
+  frozen_epochs: 30
+  unfrozen_epochs: 30
+  selection_metric: jaccard
+  lr_finder:
+    lr_min: 1.0e-6
+    lr_max: 1.0
+    n_iter: 100
+    beta: 0.9
+  scheduler:
+    cut_frac: 0.1
+    ratio: 32.0
+
+artifacts:
+  experiment_dir: experiments/baseline/unet34
+  checkpoint_dir: checkpoints/baseline/unet34
+  final_checkpoint_root: checkpoints/final/unet34
+  final_experiment_dir: experiments/final/unet34
