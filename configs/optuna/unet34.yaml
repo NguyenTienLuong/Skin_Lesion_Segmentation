@@ -1,4 +1,8 @@
 seed: 42
+runtime:
+  device: auto
+  data_parallel: true
+
 model:
   name: unet34
   pretrained: true
@@ -15,6 +19,7 @@ search:
   allow_batch32: false
 
 training:
+  selection_metric: dice
   frozen_epochs: 30
   unfrozen_epochs: 30
   lr_finder:
@@ -27,7 +32,8 @@ training:
     ratio: 32.0
 
 study:
-  name: unet34_isic_hpo
+  # Separate study namespace: Dice scores must not be mixed with old Jaccard trials.
+  name: unet34_isic_hpo_best_dice
   storage: experiments/optuna/unet34/optuna.db
   pruner:
     percentile: 25.0
@@ -37,7 +43,7 @@ study:
     n_min_trials: 5
 
 artifacts:
-  top5_dir: checkpoints/optuna/unet34/top5_128
-  top5_manifest: experiments/optuna/unet34/top5_manifest.csv
+  top5_dir: checkpoints/optuna/unet34/top5_128_dice
+  top5_manifest: experiments/optuna/unet34/top5_manifest_dice.csv
   trials_csv: experiments/optuna/unet34/trials.csv
-  confirmation_dir: checkpoints/optuna/unet34/confirmation_256
+  confirmation_dir: checkpoints/optuna/unet34/confirmation_256_dice

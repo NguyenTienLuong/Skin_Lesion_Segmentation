@@ -19,6 +19,7 @@ from src.training.trainer import train_resolution
 from src.metrics.segmentation_metrics import evaluate
 from src.utils.seed import set_seed
 from src.utils.checkpoint import save_checkpoint
+from src.utils.device import describe_device, device_from_config, prepare_model
 
 
 def main():
@@ -27,7 +28,8 @@ def main():
     ap.add_argument("--tag", default="run")
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device, data_parallel = device_from_config(cfg)
+    print(describe_device(device, data_parallel))
     seed = int(cfg.get("seed", 42))
     set_seed(seed)
     data_cfg = cfg.get("data", {})
@@ -40,6 +42,7 @@ def main():
         n_splits=int(data_cfg.get("n_splits", 3)),
         seed=seed,
     )
+    selection_metric = cfg["training"].get("selection_metric", "dice")
     results = []
 
     for fold, (tr, va) in enumerate(folds):
@@ -47,7 +50,11 @@ def main():
             f"fold {fold + 1}/{len(folds)}: train={len(tr)}, val={len(va)}, "
             f"seed={seed}"
         )
-        model = UNet34(pretrained=cfg["model"].get("pretrained", True)).to(device)
+        model = prepare_model(
+            UNet34(pretrained=cfg["model"].get("pretrained", True)),
+            device,
+            data_parallel=data_parallel,
+        )
         loss_fn = build_loss(cfg["loss"])
 
         for size in cfg["training"]["sizes"]:
@@ -62,7 +69,8 @@ def main():
                 unfrozen_epochs=cfg["training"]["unfrozen_epochs"],
                 lr_finder_cfg=cfg["training"]["lr_finder"],
                 scheduler_cfg=cfg["training"]["scheduler"],
-                selection_metric="jaccard", tag=f"{args.tag} fold{fold} {size}px",
+                selection_metric=selection_metric,
+                tag=f"{args.tag} fold{fold} {size}px",
             )
 
         final_dl = make_loader(va, max(cfg["training"]["sizes"]), False, cfg["training"]["batch_size"],
@@ -70,7 +78,13 @@ def main():
                                seed=seed)
         metrics = evaluate([model], final_dl, device, include_hd95=True)
         ckpt_dir = Path(cfg["artifacts"].get("final_checkpoint_root", "checkpoints/final/unet34")) / f"fold_{int(fold)+1}"
-        save_checkpoint(ckpt_dir / f"{args.tag}_best.pt", model, fold=int(fold), metrics=metrics)
+        save_checkpoint(
+            ckpt_dir / f"{args.tag}_best.pt",
+            model,
+            fold=int(fold),
+            selection_metric=selection_metric,
+            metrics=metrics,
+        )
         results.append({"fold": int(fold), **metrics})
 
     out = Path(cfg["artifacts"].get("final_experiment_dir", "experiments/final/unet34"))

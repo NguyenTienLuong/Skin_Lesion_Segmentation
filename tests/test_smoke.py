@@ -23,6 +23,7 @@ from src.metrics.segmentation_metrics import evaluate
 from src.models.unet34 import UNet34
 from src.training.losses import build_loss
 from src.training.trainer import train_resolution
+from src.utils.device import prepare_model, resolve_device
 from src.utils.seed import set_seed
 
 
@@ -92,11 +93,7 @@ def _device() -> torch.device:
     requested = os.getenv("SMOKE_DEVICE", "auto").lower()
     if requested == "gpu":
         requested = "cuda"
-    if requested == "auto":
-        requested = "cuda" if torch.cuda.is_available() else "cpu"
-    if requested == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("SMOKE_DEVICE=cuda but CUDA is not available")
-    return torch.device(requested)
+    return resolve_device(requested)
 
 
 def test_training_pipeline_end_to_end() -> None:
@@ -107,6 +104,7 @@ def test_training_pipeline_end_to_end() -> None:
     lr_iterations = _env_int("SMOKE_LR_ITERATIONS", 5, minimum=3)
     requested_batch_size = _env_int("SMOKE_BATCH_SIZE", 8)
     pretrained = _env_flag("SMOKE_PRETRAINED", True)
+    data_parallel = _env_flag("SMOKE_DATA_PARALLEL", True)
     device = _device()
     set_seed(42)
 
@@ -122,7 +120,11 @@ def test_training_pipeline_end_to_end() -> None:
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     validation_loader = DataLoader(validation_dataset, batch_size=batch_size)
 
-    model = SmokeUNet34(pretrained=pretrained).to(device)
+    model = prepare_model(
+        SmokeUNet34(pretrained=pretrained),
+        device,
+        data_parallel=data_parallel,
+    )
     loss_name = os.getenv("SMOKE_LOSS", "Combo")
     loss_fn = build_loss({"name": loss_name, "alpha": 0.5})
     history = train_resolution(
@@ -141,7 +143,7 @@ def test_training_pipeline_end_to_end() -> None:
             "beta": 0.9,
         },
         scheduler_cfg={"cut_frac": 0.1, "ratio": 32.0},
-        selection_metric="jaccard",
+        selection_metric="dice",
         tag="pytest-smoke",
     )
     metrics = evaluate([model], validation_loader, device=device, include_hd95=False)
@@ -157,7 +159,9 @@ def test_training_pipeline_end_to_end() -> None:
 
     print(
         "smoke passed: "
-        f"device={device}, pretrained={pretrained}, samples={sample_count}, "
+        f"device={device}, gpu_count={torch.cuda.device_count()}, "
+        f"data_parallel={isinstance(model, torch.nn.DataParallel)}, "
+        f"pretrained={pretrained}, samples={sample_count}, "
         f"train={training_count}, val={validation_count}, size={image_size}, "
         f"frozen_epochs={frozen_epochs}, unfrozen_epochs={unfrozen_epochs}, "
         f"frozen_lr={history['frozen'].lr:.3e}, "

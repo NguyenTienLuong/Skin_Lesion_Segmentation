@@ -14,6 +14,7 @@ from src.data.loader import discover_kaggle_records, split_records
 from src.hpo.objective import UNet34Objective
 from src.hpo.study import create_or_load_study
 from src.utils.seed import set_seed
+from src.utils.device import describe_device, device_from_config
 
 
 def main():
@@ -40,7 +41,8 @@ def main():
         f"runtime split: train={len(train_records)}, val={len(val_records)}, "
         f"seed={seed}"
     )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device, data_parallel = device_from_config(cfg)
+    print(describe_device(device, data_parallel))
 
     study = create_or_load_study(cfg)
     objective = UNet34Objective(train_records, val_records, cfg, device)

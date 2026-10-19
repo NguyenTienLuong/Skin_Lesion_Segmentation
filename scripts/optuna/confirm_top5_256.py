@@ -18,7 +18,8 @@ from src.hpo.search_space import configuration_from_params
 from src.models.unet34 import UNet34
 from src.training.losses import build_loss
 from src.training.trainer import train_resolution
-from src.utils.checkpoint import save_checkpoint
+from src.utils.checkpoint import load_model_state, save_checkpoint
+from src.utils.device import describe_device, device_from_config, prepare_model
 from src.utils.seed import set_seed
 
 
@@ -29,7 +30,8 @@ def main():
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     seed = int(cfg.get("seed", 42))
     set_seed(seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device, data_parallel = device_from_config(cfg)
+    print(describe_device(device, data_parallel))
 
     data_cfg = cfg.get("data", {})
     records = discover_kaggle_records(
@@ -41,20 +43,28 @@ def main():
         val_fraction=float(data_cfg.get("val_fraction", 0.2)),
         seed=seed,
     )
-    with open(cfg["artifacts"]["top5_manifest"], encoding="utf-8") as stream:
+    manifest_path = Path(cfg["artifacts"]["top5_manifest"])
+    with manifest_path.open(encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream))
     if len(rows) < 5:
-        raise RuntimeError("Chưa đủ 5 COMPLETE candidates trong top5_manifest.csv")
+        raise RuntimeError(
+            f"Chưa đủ 5 COMPLETE candidates trong {manifest_path}"
+        )
 
     results = []
+    selection_metric = cfg["training"].get("selection_metric", "dice")
     out_dir = Path(cfg["artifacts"]["confirmation_dir"]); out_dir.mkdir(parents=True, exist_ok=True)
     for row in rows[:5]:
         set_seed(seed)
         payload = torch.load(row["checkpoint"], map_location="cpu")
         params = json.loads(row["params_json"])
         sampled = configuration_from_params(params)
-        model = UNet34(pretrained=False).to(device)
-        model.load_state_dict(payload["model_state"])
+        model = prepare_model(
+            UNet34(pretrained=False),
+            device,
+            data_parallel=data_parallel,
+        )
+        load_model_state(model, payload["model_state"])
         loss_fn = build_loss(sampled["loss"])
         bs = sampled["batch_size"]
         tr_dl = make_loader(tr, 256, True, bs, cfg["data"].get("num_workers", 2),
@@ -67,19 +77,37 @@ def main():
             unfrozen_epochs=cfg["training"].get("unfrozen_epochs", 30),
             lr_finder_cfg=cfg["training"].get("lr_finder", {}),
             scheduler_cfg=cfg["training"].get("scheduler", {}),
-            selection_metric="jaccard", tag=f"trial {row['trial']} confirm256",
+            selection_metric=selection_metric,
+            tag=f"trial {row['trial']} confirm256",
         )
         metrics = hist["unfrozen"].metrics
         ckpt = out_dir / f"trial_{int(row['trial']):04d}_256.pt"
-        save_checkpoint(ckpt, model, trial=int(row["trial"]), params=params, metrics=metrics)
-        results.append({"trial": int(row["trial"]), "jaccard": metrics["jaccard"],
-                        "params_json": json.dumps(params), "checkpoint": str(ckpt)})
+        save_checkpoint(
+            ckpt,
+            model,
+            trial=int(row["trial"]),
+            params=params,
+            selection_metric=selection_metric,
+            metrics=metrics,
+        )
+        results.append({
+            "trial": int(row["trial"]),
+            "score": metrics[selection_metric],
+            "dice": metrics["dice"],
+            "jaccard": metrics["jaccard"],
+            "params_json": json.dumps(params),
+            "checkpoint": str(ckpt),
+        })
 
-    results.sort(key=lambda r: r["jaccard"], reverse=True)
+    results.sort(key=lambda r: r["score"], reverse=True)
     out_csv = out_dir / "confirmation_results.csv"
     pd.DataFrame(results).to_csv(out_csv, index=False)
     print(pd.DataFrame(results))
-    print("winner trial:", results[0]["trial"])
+    print(
+        f"winner trial by {selection_metric}:",
+        results[0]["trial"],
+        f"score={results[0]['score']:.6f}",
+    )
 
 
 if __name__ == "__main__":

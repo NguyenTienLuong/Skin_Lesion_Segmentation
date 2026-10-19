@@ -10,16 +10,20 @@ def _make_scaler(device, enabled):
     return torch.amp.GradScaler(device.type, enabled=enabled and device.type == "cuda")
 
 
-def lr_find(model, train_loader, val_batch, loss_fn, optimizer_cfg: dict, device,
+def lr_find(model, train_loader, loss_fn, optimizer_cfg: dict, device,
             bn_frozen: bool, lr_min: float = 1e-6, lr_max: float = 1.0,
             n_iter: int = 100, beta: float = 0.9):
-    """LR Finder từ notebook, tổng quát optimizer/loss để dùng baseline và Optuna."""
+    """Run an LR range test using only batches from the training subset.
+
+    The smoothed training loss selects the learning rate. Validation data is
+    intentionally not accepted here, so checkpoint selection/evaluation data
+    cannot influence optimizer tuning.
+    """
     state = copy.deepcopy(model.state_dict())
     optimizer = build_optimizer(model, lr=lr_min, cfg=optimizer_cfg)
     scaler = _make_scaler(device, enabled=True)
     mult = (lr_max / lr_min) ** (1 / max(1, n_iter - 1))
 
-    xv, yv = val_batch[0].to(device), val_batch[1].to(device)
     iterator = iter(train_loader)
     lrs, losses = [], []
     avg, best = 0.0, float("inf")
@@ -40,15 +44,12 @@ def lr_find(model, train_loader, val_batch, loss_fn, optimizer_cfg: dict, device
         set_train_mode(model, bn_frozen)
         with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
             loss = loss_fn(model(x).float(), y)
+        train_loss = float(loss.detach().item())
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
-        model.eval()
-        with torch.no_grad(), torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
-            val_loss = loss_fn(model(xv).float(), yv).item()
-
-        avg = beta * avg + (1 - beta) * val_loss
+        avg = beta * avg + (1 - beta) * train_loss
         smoothed = avg / (1 - beta ** (i + 1))
         if not np.isfinite(smoothed) or (i > 5 and smoothed > 4 * best):
             break

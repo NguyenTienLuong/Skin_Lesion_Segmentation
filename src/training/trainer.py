@@ -9,7 +9,7 @@ from .scheduler import stlr_lambda
 from .lr_finder import lr_find
 from src.metrics.segmentation_metrics import evaluate
 from src.models.unet34 import freeze_encoder, unfreeze, set_train_mode
-from ..utils.checkpoint import cpu_state_dict
+from ..utils.checkpoint import cpu_state_dict, load_model_state
 
 
 @dataclass
@@ -40,7 +40,7 @@ def train_step(model, optimizer, scaler, loss_fn, x, y, device):
 
 def fit_stage(model, train_loader, val_loader, loss_fn, optimizer_cfg: dict,
               lr: float, epochs: int, device, bn_frozen: bool,
-              selection_metric: str = "jaccard", cut_frac: float = 0.1,
+              selection_metric: str = "dice", cut_frac: float = 0.1,
               ratio: float = 32.0, tag: str = "") -> StageResult:
     optimizer = build_optimizer(model, lr=lr, cfg=optimizer_cfg)
     scaler = _make_scaler(device)
@@ -75,7 +75,7 @@ def fit_stage(model, train_loader, val_loader, loss_fn, optimizer_cfg: dict,
             f"thr-jac {metrics['threshold_jaccard']:.4f}"
         )
 
-    model.load_state_dict(best["state"])
+    load_model_state(model, best["state"])
     return StageResult(
         metrics=best["metrics"], epoch=best["epoch"], lr=lr,
         state=best["state"], lr_finder_lrs=np.array([]), lr_finder_losses=np.array([]),
@@ -86,15 +86,14 @@ def fit_stage(model, train_loader, val_loader, loss_fn, optimizer_cfg: dict,
 def train_resolution(model, train_loader, val_loader, loss_fn, optimizer_cfg: dict,
                      device, frozen_epochs: int = 30, unfrozen_epochs: int = 30,
                      lr_finder_cfg: dict | None = None, scheduler_cfg: dict | None = None,
-                     selection_metric: str = "jaccard", tag: str = ""):
+                     selection_metric: str = "dice", tag: str = ""):
     lr_finder_cfg = lr_finder_cfg or {}
     scheduler_cfg = scheduler_cfg or {}
-    val_batch = next(iter(val_loader))
     history = {}
 
     freeze_encoder(model)
     lr, lrs, losses = lr_find(
-        model, train_loader, val_batch, loss_fn, optimizer_cfg, device,
+        model, train_loader, loss_fn, optimizer_cfg, device,
         bn_frozen=False, **lr_finder_cfg,
     )
     frozen = fit_stage(
@@ -108,7 +107,7 @@ def train_resolution(model, train_loader, val_loader, loss_fn, optimizer_cfg: di
 
     unfreeze(model, freeze_bn=True)
     lr, lrs, losses = lr_find(
-        model, train_loader, val_batch, loss_fn, optimizer_cfg, device,
+        model, train_loader, loss_fn, optimizer_cfg, device,
         bn_frozen=True, **lr_finder_cfg,
     )
     unfrozen = fit_stage(

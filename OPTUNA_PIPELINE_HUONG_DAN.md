@@ -123,26 +123,28 @@ python scripts/baseline/train_unet34.py \
 Pipeline baseline:
 
 ```text
-128×128
-  ├── frozen 30 epoch
-  └── unfrozen 30 epoch
-       ↓
-transfer weights
-       ↓
-256×256
-  ├── frozen 30 epoch
-  └── unfrozen 30 epoch
+official training → deterministic 3-fold
+  └── mỗi fold:
+      train 2 fold (có augmentation)
+      LR finder chỉ dùng training loss của train fold
+      fold còn lại (không augmentation) chọn Best Dice
+      128×128 frozen/unfrozen → 256×256 frozen/unfrozen
+official validation (không augmentation)
+  ├── đánh giá từng Best-Dice fold
+  └── đánh giá ensemble trung bình xác suất 3 fold
 ```
 
 Artifact chính:
 
 ```text
 checkpoints/baseline/unet34/
-├── unet34_128_best.pt
-└── unet34_256_best.pt
+├── fold_1/baseline_best.pt
+├── fold_2/baseline_best.pt
+└── fold_3/baseline_best.pt
 
 experiments/baseline/unet34/
-└── metrics.json
+├── baseline_fold_metrics.csv
+└── baseline_validation_summary.json
 ```
 
 Baseline **không bắt buộc phải chạy trước Optuna về mặt code**, nhưng nên chạy để có mốc so sánh.
@@ -162,6 +164,17 @@ Config:
 ```text
 configs/optuna/unet34.yaml
 ```
+
+Protocol dữ liệu HPO:
+
+```text
+official training
+├── train subset: có augmentation, cập nhật trọng số, LR finder dùng training loss
+└── validation subset: không augmentation, chỉ prune/chọn Best Dice/xếp trial
+```
+
+Official validation và test không tham gia chọn hyperparameter. LR finder không
+nhận batch từ validation subset.
 
 ## 6.1. Chạy theo time budget
 
@@ -203,7 +216,7 @@ Config hiện tại dùng:
 
 ```text
 study.name:
-    unet34_isic_hpo
+    unet34_isic_hpo_best_dice
 
 study.storage:
     experiments/optuna/unet34/optuna.db
@@ -274,22 +287,22 @@ src/hpo/topk_manager.py
 
 Sau mỗi trial `COMPLETE`, TopKManager tự:
 
-1. so Jaccard của trial mới với các candidate đang có;
+1. so Dice của trial mới với các candidate đang có;
 2. giữ tối đa 5 trial tốt nhất;
 3. lưu checkpoint nếu trial nằm trong Top 5;
 4. xóa checkpoint bị đẩy khỏi Top 5;
-5. cập nhật `top5_manifest.csv`.
+5. cập nhật `top5_manifest_dice.csv`.
 
 Artifact:
 
 ```text
-experiments/optuna/unet34/top5_manifest.csv
+experiments/optuna/unet34/top5_manifest_dice.csv
 ```
 
 và checkpoint:
 
 ```text
-checkpoints/optuna/unet34/top5_128/
+checkpoints/optuna/unet34/top5_128_dice/
 ├── trial_XXXX.pt
 ├── trial_XXXX.pt
 ├── trial_XXXX.pt
@@ -325,7 +338,7 @@ File này chứa toàn bộ trial trong study.
 Cần đảm bảo:
 
 ```text
-experiments/optuna/unet34/top5_manifest.csv
+experiments/optuna/unet34/top5_manifest_dice.csv
 ```
 
 có **5 candidate**.
@@ -348,7 +361,7 @@ Theo protocol của project:
 
 # 11. Bước 5 — Train Top 5 từ 128 lên 256
 
-Khi `top5_manifest.csv` đã có đủ 5 candidate, chạy:
+Khi `top5_manifest_dice.csv` đã có đủ 5 candidate, chạy:
 
 ```bash
 python scripts/optuna/confirm_top5_256.py \
@@ -358,7 +371,7 @@ python scripts/optuna/confirm_top5_256.py \
 File này đọc:
 
 ```text
-experiments/optuna/unet34/top5_manifest.csv
+experiments/optuna/unet34/top5_manifest_dice.csv
 ```
 
 và với từng candidate:
@@ -383,7 +396,7 @@ train @256
   frozen 30 epoch
   unfrozen 30 epoch
       ↓
-Jaccard @256
+Dice @256
 ```
 
 Ở bước confirmation @256:
@@ -403,7 +416,7 @@ Mỗi Top-5 candidate giữ đúng configuration mà Optuna đã tìm được �
 Checkpoint:
 
 ```text
-checkpoints/optuna/unet34/confirmation_256/
+checkpoints/optuna/unet34/confirmation_256_dice/
 ├── trial_XXXX_256.pt
 ├── trial_XXXX_256.pt
 ├── trial_XXXX_256.pt
@@ -415,13 +428,13 @@ checkpoints/optuna/unet34/confirmation_256/
 Quan trọng nhất:
 
 ```text
-checkpoints/optuna/unet34/confirmation_256/confirmation_results.csv
+checkpoints/optuna/unet34/confirmation_256_dice/confirmation_results.csv
 ```
 
 File này được sort giảm dần theo:
 
 ```text
-Jaccard @256
+Dice @256
 ```
 
 Nên:
@@ -434,10 +447,14 @@ Các cột hiện tại:
 
 ```text
 trial
+score
+dice
 jaccard
 params_json
 checkpoint
 ```
+
+Với cấu hình hiện tại, `score` chính là Dice dùng để xếp hạng candidate.
 
 Script cũng in:
 
@@ -466,7 +483,7 @@ configs/final/unet34.yaml
 Vì vậy cần mở:
 
 ```text
-checkpoints/optuna/unet34/confirmation_256/confirmation_results.csv
+checkpoints/optuna/unet34/confirmation_256_dice/confirmation_results.csv
 ```
 
 lấy `params_json` ở dòng đầu tiên và đưa vào:
@@ -667,7 +684,7 @@ experiments/final/unet34/
 
 ---
 
-# 16. Bước 8 — Train baseline 3-fold để so sánh
+# 16. Bước 8 — Baseline 3-fold để so sánh
 
 Nếu báo cáo cần so:
 
@@ -677,12 +694,13 @@ vs
 optimized
 ```
 
-thì baseline cũng cần chạy cùng 3-fold protocol.
+thì baseline cũng chạy cùng 3-fold protocol, nhưng dùng official validation
+để báo cáo từng model và ensemble sau khi các fold đã chọn xong Best Dice.
 
 Chạy:
 
 ```bash
-python scripts/final/train_3fold.py \
+python scripts/baseline/train_unet34.py \
   --config configs/baseline/unet34.yaml \
   --tag baseline
 ```
@@ -690,24 +708,21 @@ python scripts/final/train_3fold.py \
 Output:
 
 ```text
-checkpoints/final/unet34/
+checkpoints/baseline/unet34/
 ├── fold_1/
-│   ├── baseline_best.pt
-│   └── optimized_best.pt
+│   └── baseline_best.pt
 ├── fold_2/
-│   ├── baseline_best.pt
-│   └── optimized_best.pt
+│   └── baseline_best.pt
 └── fold_3/
-    ├── baseline_best.pt
-    └── optimized_best.pt
+    └── baseline_best.pt
 ```
 
 và:
 
 ```text
-experiments/final/unet34/
+experiments/baseline/unet34/
 ├── baseline_fold_metrics.csv
-└── optimized_fold_metrics.csv
+└── baseline_validation_summary.json
 ```
 
 ---
@@ -752,7 +767,7 @@ Nếu muốn ensemble baseline:
 ```bash
 python scripts/final/ensemble_test.py \
   --config configs/baseline/unet34.yaml \
-  --checkpoint-root checkpoints/final/unet34 \
+  --checkpoint-root checkpoints/baseline/unet34 \
   --tag baseline
 ```
 
@@ -762,7 +777,7 @@ python scripts/final/ensemble_test.py \
 
 ## Trường hợp chạy đầy đủ từ đầu
 
-### 1. Baseline runtime-split run
+### 1. Baseline 3-fold + official-validation run
 
 ```bash
 python scripts/baseline/train_unet34.py \
@@ -799,7 +814,7 @@ python scripts/optuna/export_trials.py \
 Kiểm tra:
 
 ```text
-experiments/optuna/unet34/top5_manifest.csv
+experiments/optuna/unet34/top5_manifest_dice.csv
 ```
 
 phải có đủ 5 candidate.
@@ -816,7 +831,7 @@ python scripts/optuna/confirm_top5_256.py \
 Đọc dòng đầu của:
 
 ```text
-checkpoints/optuna/unet34/confirmation_256/confirmation_results.csv
+checkpoints/optuna/unet34/confirmation_256_dice/confirmation_results.csv
 ```
 
 ### 8. Khóa winner
@@ -840,7 +855,7 @@ python scripts/final/train_3fold.py \
 ### 10. Final 3-fold baseline
 
 ```bash
-python scripts/final/train_3fold.py \
+python scripts/baseline/train_unet34.py \
   --config configs/baseline/unet34.yaml \
   --tag baseline
 ```
@@ -859,7 +874,7 @@ python scripts/final/ensemble_test.py \
 ```bash
 python scripts/final/ensemble_test.py \
   --config configs/baseline/unet34.yaml \
-  --checkpoint-root checkpoints/final/unet34 \
+  --checkpoint-root checkpoints/baseline/unet34 \
   --tag baseline
 ```
 
@@ -917,15 +932,15 @@ là quan trọng nhất vì chứa lịch sử study.
 Ngoài ra cần backup:
 
 ```text
-experiments/optuna/unet34/top5_manifest.csv
+experiments/optuna/unet34/top5_manifest_dice.csv
 
-checkpoints/optuna/unet34/top5_128/
+checkpoints/optuna/unet34/top5_128_dice/
 ```
 
 Sau confirmation:
 
 ```text
-checkpoints/optuna/unet34/confirmation_256/
+checkpoints/optuna/unet34/confirmation_256_dice/
 ```
 
 Sau final:
@@ -1013,13 +1028,13 @@ Optuna
 
 - [ ] Đã đạt ngân sách HPO mong muốn.
 - [ ] Có ít nhất 5 `COMPLETE` candidate.
-- [ ] `top5_manifest.csv` có 5 dòng candidate.
+- [ ] `top5_manifest_dice.csv` có 5 dòng candidate.
 - [ ] 5 checkpoint @128 tồn tại.
 
 ## Trước final 3-fold
 
 - [ ] `confirmation_results.csv` đã tạo.
-- [ ] Winner được chọn theo Jaccard @256.
+- [ ] Winner được chọn theo Dice @256.
 - [ ] `configs/final/unet34.yaml` đã cập nhật đúng winner.
 - [ ] Không còn thay đổi optimizer/loss/batch size.
 - [ ] `seed` và `n_splits` đã chốt.
@@ -1054,8 +1069,8 @@ Optuna
 7. final/train_3fold.py
    --tag optimized                     # final 3-fold
 
-8. final/train_3fold.py
-   --tag baseline                      # baseline 3-fold để so sánh
+8. baseline/train_unet34.py
+   --tag baseline                      # baseline 3-fold + official validation
 
 9. final/ensemble_test.py
    --tag optimized                     # held-out test optimized
@@ -1064,4 +1079,4 @@ Optuna
     --tag baseline                      # held-out test baseline
 ```
 
-> **Điểm cần nhớ nhất:** `Top 5 @128` không cần một script riêng để lấy. `TopKManager` cập nhật `top5_manifest.csv` và checkpoint Top-5 ngay trong lúc `run_unet34_optuna.py` đang chạy. `confirm_top5_256.py` chỉ việc đọc Top 5 đó và huấn luyện tiếp ở 256×256.
+> **Điểm cần nhớ nhất:** `Top 5 @128` không cần một script riêng để lấy. `TopKManager` cập nhật `top5_manifest_dice.csv` và checkpoint Top-5 ngay trong lúc `run_unet34_optuna.py` đang chạy. `confirm_top5_256.py` chỉ việc đọc Top 5 đó và huấn luyện tiếp ở 256×256.

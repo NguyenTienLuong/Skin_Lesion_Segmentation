@@ -12,6 +12,7 @@ import src.data.loader as loader_module
 from src.data.loader import (
     discover_isic_records,
     discover_kaggle_records,
+    kfold_records,
     make_loader,
     split_records,
 )
@@ -160,6 +161,30 @@ def test_runtime_split_is_deterministic_disjoint_and_exhaustive(tmp_path):
     assert len(val_a) == 3
     assert _ids(val_a) != _ids(val_c)
     assert set(_ids(train_c) + _ids(val_c)) == set(_ids(records))
+
+
+def test_three_folds_are_deterministic_disjoint_and_cover_each_sample_once(
+    tmp_path,
+):
+    records = _make_records(tmp_path, count=10)
+
+    folds_a = kfold_records(records, n_splits=3, seed=123)
+    folds_b = kfold_records(records, n_splits=3, seed=123)
+
+    assert [(_ids(train), _ids(holdout)) for train, holdout in folds_a] == [
+        (_ids(train), _ids(holdout)) for train, holdout in folds_b
+    ]
+    all_ids = set(_ids(records))
+    holdout_ids = []
+    for train, holdout in folds_a:
+        train_ids = set(_ids(train))
+        fold_holdout_ids = set(_ids(holdout))
+        assert train_ids.isdisjoint(fold_holdout_ids)
+        assert train_ids | fold_holdout_ids == all_ids
+        holdout_ids.extend(_ids(holdout))
+
+    assert len(holdout_ids) == len(records)
+    assert set(holdout_ids) == all_ids
 
 
 def test_make_loader_keeps_last_batch_by_default_and_can_drop_it(tmp_path):

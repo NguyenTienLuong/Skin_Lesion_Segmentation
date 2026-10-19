@@ -1,4 +1,10 @@
 seed: 42
+runtime:
+  # auto: CPU when CUDA is unavailable, otherwise use CUDA.
+  device: auto
+  # Use every visible GPU. Global batch_size is kept unchanged.
+  data_parallel: true
+
 model:
   name: unet34
   pretrained: true
@@ -8,7 +14,7 @@ data:
   data_root: null
   # null = project data/ for official validation/test masks.
   mask_root: null
-  val_fraction: 0.2
+  n_splits: 3
   num_workers: 2
 
 optimizer:
@@ -23,7 +29,7 @@ training:
   batch_size: 8
   frozen_epochs: 30
   unfrozen_epochs: 30
-  selection_metric: jaccard
+  selection_metric: dice
   lr_finder:
     lr_min: 1.0e-6
     lr_max: 1.0
@@ -36,5 +42,5 @@ training:
 artifacts:
   experiment_dir: experiments/baseline/unet34
   checkpoint_dir: checkpoints/baseline/unet34
-  final_checkpoint_root: checkpoints/final/unet34
-  final_experiment_dir: experiments/final/unet34
+  final_checkpoint_root: checkpoints/baseline/unet34
+  final_experiment_dir: experiments/baseline/unet34

@@ -16,6 +16,7 @@ from src.data.loader import discover_kaggle_records, make_loader
 from src.models.unet34 import UNet34
 from src.metrics.segmentation_metrics import evaluate
 from src.utils.checkpoint import load_checkpoint
+from src.utils.device import describe_device, device_from_config, prepare_model
 from src.utils.seed import set_seed
 
 
@@ -28,7 +29,8 @@ def main():
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     seed = int(cfg.get("seed", 42))
     set_seed(seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device, data_parallel = device_from_config(cfg)
+    print(describe_device(device, data_parallel))
     checkpoint_root = args.checkpoint_root or cfg.get("artifacts", {}).get(
         "final_checkpoint_root", "checkpoints/final/unet34"
     )
@@ -41,7 +43,11 @@ def main():
 
     models = []
     for f in files:
-        m = UNet34(pretrained=False).to(device)
+        m = prepare_model(
+            UNet34(pretrained=False),
+            device,
+            data_parallel=data_parallel,
+        )
         load_checkpoint(f, m, map_location=device); models.append(m)
 
     data_cfg = cfg.get("data", {})

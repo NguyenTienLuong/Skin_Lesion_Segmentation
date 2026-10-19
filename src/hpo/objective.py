@@ -10,6 +10,7 @@ from ..training.losses import build_loss
 from ..training.lr_finder import lr_find
 from ..training.trainer import fit_stage
 from ..utils.seed import set_seed
+from ..utils.device import prepare_model
 
 
 class UNet34Objective:
@@ -43,40 +44,44 @@ class UNet34Objective:
             seed=seed,
         )
 
-        model = UNet34(pretrained=True).to(self.device)
+        model = prepare_model(
+            UNet34(pretrained=True),
+            self.device,
+            data_parallel=self.cfg.get("runtime", {}).get("data_parallel", True),
+        )
         loss_fn = build_loss(sampled["loss"])
-        val_batch = next(iter(val_loader))
         lrf_cfg = self.cfg["training"].get("lr_finder", {})
         sched_cfg = self.cfg["training"].get("scheduler", {})
+        selection_metric = self.cfg["training"].get("selection_metric", "dice")
 
         freeze_encoder(model)
         lr, _, _ = lr_find(
-            model, train_loader, val_batch, loss_fn, sampled["optimizer"], self.device,
+            model, train_loader, loss_fn, sampled["optimizer"], self.device,
             bn_frozen=False, **lrf_cfg,
         )
         frozen = fit_stage(
             model, train_loader, val_loader, loss_fn, sampled["optimizer"], lr,
             self.cfg["training"].get("frozen_epochs", 30), self.device,
-            bn_frozen=False, selection_metric="jaccard",
+            bn_frozen=False, selection_metric=selection_metric,
             cut_frac=sched_cfg.get("cut_frac", 0.1), ratio=sched_cfg.get("ratio", 32.0),
             tag=f"trial {trial.number} 128 frozen",
         )
-        trial.report(float(frozen.metrics["jaccard"]), step=0)
+        trial.report(float(frozen.metrics[selection_metric]), step=0)
         if trial.should_prune():
             raise optuna.TrialPruned()
 
         unfreeze(model, freeze_bn=True)
         lr, _, _ = lr_find(
-            model, train_loader, val_batch, loss_fn, sampled["optimizer"], self.device,
+            model, train_loader, loss_fn, sampled["optimizer"], self.device,
             bn_frozen=True, **lrf_cfg,
         )
         unfrozen = fit_stage(
             model, train_loader, val_loader, loss_fn, sampled["optimizer"], lr,
             self.cfg["training"].get("unfrozen_epochs", 30), self.device,
-            bn_frozen=True, selection_metric="jaccard",
+            bn_frozen=True, selection_metric=selection_metric,
             cut_frac=sched_cfg.get("cut_frac", 0.1), ratio=sched_cfg.get("ratio", 32.0),
             tag=f"trial {trial.number} 128 unfrozen",
         )
-        score = float(unfrozen.metrics["jaccard"])
+        score = float(unfrozen.metrics[selection_metric])
         self.manager.update(trial.number, score, model, trial.params, unfrozen.metrics)
         return score

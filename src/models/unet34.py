@@ -4,6 +4,8 @@ import torch, torch.nn as nn, torch.nn.functional as F
 from torchvision import models, tv_tensors
 from torchvision.transforms import v2
 
+from src.utils.device import unwrap_model
+
 class UpBlock(nn.Module):
     def __init__(self, in_ch, skip_ch, out_ch):
         super().__init__()
@@ -41,7 +43,8 @@ BN = nn.BatchNorm2d
 
 def freeze_encoder(model: UNet34) -> None:
     """Mapping notebook: freeze toàn encoder, nhưng BN encoder vẫn cho học ở frozen stage."""
-    for module in model.first_layer_group:
+    base_model = unwrap_model(model)
+    for module in base_model.first_layer_group:
         for m in module.modules():
             for p in m.parameters(recurse=False):
                 p.requires_grad = isinstance(m, BN)
@@ -63,4 +66,3 @@ def set_train_mode(model: nn.Module, bn_frozen: bool) -> None:
         for m in model.modules():
             if isinstance(m, BN):
                 m.eval()
-    
