@@ -8,14 +8,14 @@ if str(PROJECT_ROOT) not in sys.path:
 from pathlib import Path
 import argparse
 import json
-import pandas as pd
 import torch
 import yaml
 
-from src.data.loader import make_loader
+from src.data.loader import discover_kaggle_records, make_loader, split_records
 from src.models.unet34 import UNet34
 from src.metrics.segmentation_metrics import evaluate
 from src.utils.checkpoint import load_checkpoint
+from src.utils.seed import set_seed
 
 
 def main():
@@ -26,19 +26,40 @@ def main():
     args = ap.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    seed = int(cfg.get("seed", 42))
+    set_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNet34(pretrained=False).to(device)
     load_checkpoint(args.checkpoint, model, map_location=device)
 
+    data_cfg = cfg.get("data", {})
     if args.split == "val":
-        df = pd.read_csv(cfg["data"]["tuning_split"])
-        df = df[df.split == "val"].reset_index(drop=True)
+        records = discover_kaggle_records(
+            "train",
+            data_root=data_cfg.get("data_root"),
+        )
+        _, records = split_records(
+            records,
+            val_fraction=float(data_cfg.get("val_fraction", 0.2)),
+            seed=seed,
+        )
     else:
-        df = pd.read_csv(cfg["data"]["heldout_test"])
+        records = discover_kaggle_records(
+            "test",
+            data_root=data_cfg.get("data_root"),
+            mask_root=data_cfg.get("mask_root"),
+        )
 
     size = max(cfg["training"]["sizes"])
-    dl = make_loader(df, size, False, cfg["training"]["batch_size"],
-                     cfg["data"].get("num_workers", 2), device.type == "cuda")
+    dl = make_loader(
+        records,
+        size,
+        False,
+        cfg["training"]["batch_size"],
+        data_cfg.get("num_workers", 2),
+        device.type == "cuda",
+        seed=seed,
+    )
     metrics = evaluate([model], dl, device, include_hd95=True)
     print(json.dumps(metrics, indent=2))
 

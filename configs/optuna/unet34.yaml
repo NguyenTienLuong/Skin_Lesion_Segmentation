@@ -4,9 +4,11 @@ model:
   pretrained: true
 
 data:
-  tuning_split: data/splits/tuning_split.csv
-  folds_3: data/splits/folds_3.csv
-  heldout_test: data/splits/heldout_test.csv
+  # null = Kaggle mount when available, otherwise KaggleHub download/cache.
+  data_root: null
+  # null = project data/ for official validation/test masks.
+  mask_root: null
+  val_fraction: 0.2
   num_workers: 2
 
 search:

@@ -63,14 +63,14 @@ Held-out test
 
 | Giai đoạn | File chạy |
 |---|---|
-| Chuẩn bị manifest / split / fold | `scripts/prepare_data.py` |
+| Nạp dữ liệu và chia tập lúc chạy | `src/data/loader.py` |
 | Baseline | `scripts/baseline/train_unet34.py` |
 | Optuna HPO @128 | `scripts/optuna/run_unet34_optuna.py` |
 | Export toàn bộ trial | `scripts/optuna/export_trials.py` |
 | Train Top 5 @256 | `scripts/optuna/confirm_top5_256.py` |
 | Final 3-fold | `scripts/final/train_3fold.py` |
 | Ensemble held-out test | `scripts/final/ensemble_test.py` |
-| Alias đánh giá final | `scripts/final/evaluate_final.py` |
+| Đánh giá một checkpoint | `scripts/evaluation/evaluation_unet34.py` |
 
 ---
 
@@ -86,33 +86,22 @@ Nên chạy từ root project để các đường dẫn tương đối trong co
 
 # 4. Bước 1 — Chuẩn bị dữ liệu
 
-Chạy một lần trước khi baseline hoặc Optuna:
+Không cần tạo manifest hoặc các file `data/splits/*.csv`. Loader tự tải/cache
+dataset bằng KaggleHub khi `data.data_root: null`, sau đó chia train/validation
+hoặc K-fold trực tiếp trong bộ nhớ bằng `seed` trong config.
 
-```bash
-python scripts/prepare_data.py \
-  --train-images /path/ISIC2018_Task1-2_Training_Input \
-  --train-masks /path/ISIC2018_Task1_Training_GroundTruth \
-  --heldout-images /path/heldout/images \
-  --heldout-masks /path/heldout/masks
-```
+Nguồn dữ liệu được dùng như sau:
 
-File này tạo:
+- Train: input và mask từ dataset Kaggle.
+- Validation/test chính thức: input từ Kaggle, mask từ `data/` local.
+- `data.data_root`: có thể đặt bằng đường dẫn do
+  `kagglehub.dataset_download(...)` trả về.
+- `data.mask_root`: để `null` nếu mask validation/test nằm trong `data/` của
+  project.
 
-```text
-data/
-├── manifests/
-│   └── data_manifest.csv
-└── splits/
-    ├── tuning_split.csv
-    ├── folds_3.csv
-    └── heldout_test.csv
-```
-
-Trong đó:
-
-- `tuning_split.csv`: dùng cho baseline và Optuna.
-- `folds_3.csv`: dùng cho final 3-fold.
-- `heldout_test.csv`: chỉ dùng đánh giá cuối.
+`scripts/prepare_data.py` chỉ còn là tiện ích tùy chọn nếu cần xuất CSV để
+kiểm toán hoặc lưu lại một split cố định; pipeline training không phụ thuộc
+vào các CSV này.
 
 ---
 
@@ -773,24 +762,14 @@ python scripts/final/ensemble_test.py \
 
 ## Trường hợp chạy đầy đủ từ đầu
 
-### 1. Prepare data
-
-```bash
-python scripts/prepare_data.py \
-  --train-images /path/train/images \
-  --train-masks /path/train/masks \
-  --heldout-images /path/test/images \
-  --heldout-masks /path/test/masks
-```
-
-### 2. Baseline tuning-split run
+### 1. Baseline runtime-split run
 
 ```bash
 python scripts/baseline/train_unet34.py \
   --config configs/baseline/unet34.yaml
 ```
 
-### 3. Optuna session 1
+### 2. Optuna session 1
 
 ```bash
 python scripts/optuna/run_unet34_optuna.py \
@@ -798,7 +777,7 @@ python scripts/optuna/run_unet34_optuna.py \
   --timeout-seconds 21600
 ```
 
-### 4. Optuna session 2, 3, ... nếu cần
+### 3. Optuna session 2, 3, ... nếu cần
 
 Chạy lại đúng lệnh:
 
@@ -808,14 +787,14 @@ python scripts/optuna/run_unet34_optuna.py \
   --timeout-seconds 21600
 ```
 
-### 5. Export trial table
+### 4. Export trial table
 
 ```bash
 python scripts/optuna/export_trials.py \
   --config configs/optuna/unet34.yaml
 ```
 
-### 6. Kiểm tra Top 5
+### 5. Kiểm tra Top 5
 
 Kiểm tra:
 
@@ -825,14 +804,14 @@ experiments/optuna/unet34/top5_manifest.csv
 
 phải có đủ 5 candidate.
 
-### 7. Train Top 5 @256
+### 6. Train Top 5 @256
 
 ```bash
 python scripts/optuna/confirm_top5_256.py \
   --config configs/optuna/unet34.yaml
 ```
 
-### 8. Chọn winner
+### 7. Chọn winner
 
 Đọc dòng đầu của:
 
@@ -840,7 +819,7 @@ python scripts/optuna/confirm_top5_256.py \
 checkpoints/optuna/unet34/confirmation_256/confirmation_results.csv
 ```
 
-### 9. Khóa winner
+### 8. Khóa winner
 
 Sửa:
 
@@ -850,7 +829,7 @@ configs/final/unet34.yaml
 
 theo `params_json` của winner.
 
-### 10. Final 3-fold optimized
+### 9. Final 3-fold optimized
 
 ```bash
 python scripts/final/train_3fold.py \
@@ -858,7 +837,7 @@ python scripts/final/train_3fold.py \
   --tag optimized
 ```
 
-### 11. Final 3-fold baseline
+### 10. Final 3-fold baseline
 
 ```bash
 python scripts/final/train_3fold.py \
@@ -866,7 +845,7 @@ python scripts/final/train_3fold.py \
   --tag baseline
 ```
 
-### 12. Ensemble optimized test
+### 11. Ensemble optimized test
 
 ```bash
 python scripts/final/ensemble_test.py \
@@ -875,7 +854,7 @@ python scripts/final/ensemble_test.py \
   --tag optimized
 ```
 
-### 13. Ensemble baseline test
+### 12. Ensemble baseline test
 
 ```bash
 python scripts/final/ensemble_test.py \
@@ -1023,7 +1002,8 @@ Optuna
 
 ## Trước HPO
 
-- [ ] `data/splits/tuning_split.csv` đã tồn tại.
+- [ ] Dataset Kaggle truy cập được qua KaggleHub, Kaggle mount hoặc `data_root`.
+- [ ] `seed` và `val_fraction` đã chốt.
 - [ ] `configs/optuna/unet34.yaml` đã chốt.
 - [ ] `study.name` không đổi giữa các session.
 - [ ] `study.storage` trỏ đúng `optuna.db`.
@@ -1042,13 +1022,13 @@ Optuna
 - [ ] Winner được chọn theo Jaccard @256.
 - [ ] `configs/final/unet34.yaml` đã cập nhật đúng winner.
 - [ ] Không còn thay đổi optimizer/loss/batch size.
-- [ ] `folds_3.csv` đã chốt.
+- [ ] `seed` và `n_splits` đã chốt.
 
 ## Trước test
 
 - [ ] Có đủ 3 checkpoint fold.
 - [ ] Tag checkpoint đúng (`baseline` hoặc `optimized`).
-- [ ] `heldout_test.csv` chưa được dùng trong HPO.
+- [ ] Mask test local có đủ và chưa được dùng trong HPO.
 - [ ] Configuration đã khóa.
 
 ---
@@ -1056,7 +1036,7 @@ Optuna
 # 23. Tóm tắt cực ngắn
 
 ```text
-1. prepare_data.py
+1. loader.py tải/cache dữ liệu và chia tập lúc chạy
 
 2. baseline/train_unet34.py            # baseline
 

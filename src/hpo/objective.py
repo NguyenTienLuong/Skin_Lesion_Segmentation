@@ -34,11 +34,13 @@ class UNet34Objective:
             self.train_records, size=size, train=True, batch_size=bs,
             num_workers=self.cfg["data"].get("num_workers", 2),
             pin_memory=self.device.type == "cuda",
+            seed=seed,
         )
         val_loader = make_loader(
             self.val_records, size=size, train=False, batch_size=bs,
             num_workers=self.cfg["data"].get("num_workers", 2),
             pin_memory=self.device.type == "cuda",
+            seed=seed,
         )
 
         model = UNet34(pretrained=True).to(self.device)

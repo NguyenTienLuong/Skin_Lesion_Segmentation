@@ -9,37 +9,51 @@ from pathlib import Path
 import argparse
 import glob
 import json
-import pandas as pd
 import torch
 import yaml
 
-from src.data.loader import make_loader
+from src.data.loader import discover_kaggle_records, make_loader
 from src.models.unet34 import UNet34
 from src.metrics.segmentation_metrics import evaluate
 from src.utils.checkpoint import load_checkpoint
+from src.utils.seed import set_seed
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
-    ap.add_argument("--checkpoint-root", default="checkpoints/final/unet34")
+    ap.add_argument("--checkpoint-root", default=None)
     ap.add_argument("--tag", default="optimized")
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    seed = int(cfg.get("seed", 42))
+    set_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    files = sorted(glob.glob(str(Path(args.checkpoint_root) / "fold_*" / f"{args.tag}_best.pt")))
-    if len(files) != 3:
-        raise RuntimeError(f"Cần 3 checkpoint fold, tìm thấy {len(files)}: {files}")
+    checkpoint_root = args.checkpoint_root or cfg.get("artifacts", {}).get(
+        "final_checkpoint_root", "checkpoints/final/unet34"
+    )
+    files = sorted(glob.glob(str(Path(checkpoint_root) / "fold_*" / f"{args.tag}_best.pt")))
+    expected_folds = int(cfg.get("data", {}).get("n_splits", 3))
+    if len(files) != expected_folds:
+        raise RuntimeError(
+            f"Cần {expected_folds} checkpoint fold, tìm thấy {len(files)}: {files}"
+        )
 
     models = []
     for f in files:
         m = UNet34(pretrained=False).to(device)
         load_checkpoint(f, m, map_location=device); models.append(m)
 
-    test = pd.read_csv(cfg["data"]["heldout_test"])
+    data_cfg = cfg.get("data", {})
+    test = discover_kaggle_records(
+        "test",
+        data_root=data_cfg.get("data_root"),
+        mask_root=data_cfg.get("mask_root"),
+    )
     size = max(cfg["training"]["sizes"])
     dl = make_loader(test, size, False, cfg["training"]["batch_size"],
-                     cfg["data"].get("num_workers", 2), device.type == "cuda")
+                     data_cfg.get("num_workers", 2), device.type == "cuda",
+                     seed=seed)
     metrics = evaluate(models, dl, device, include_hd95=True)
     print(json.dumps(metrics, indent=2))
 

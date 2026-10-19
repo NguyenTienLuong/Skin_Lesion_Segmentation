@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Optional CSV exporter; training entrypoints now split records at runtime."""
+
 from pathlib import Path
 import argparse
 import numpy as np

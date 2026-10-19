@@ -12,7 +12,7 @@ import pandas as pd
 import torch
 import yaml
 
-from src.data.loader import make_loader
+from src.data.loader import discover_kaggle_records, kfold_records, make_loader
 from src.models.unet34 import UNet34
 from src.training.losses import build_loss
 from src.training.trainer import train_resolution
@@ -28,22 +28,34 @@ def main():
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    set_seed(cfg.get("seed", 42))
-    folds = pd.read_csv(cfg["data"]["folds_3"])
+    seed = int(cfg.get("seed", 42))
+    set_seed(seed)
+    data_cfg = cfg.get("data", {})
+    records = discover_kaggle_records(
+        "train",
+        data_root=data_cfg.get("data_root"),
+    )
+    folds = kfold_records(
+        records,
+        n_splits=int(data_cfg.get("n_splits", 3)),
+        seed=seed,
+    )
     results = []
 
-    for fold in sorted(folds.fold.unique()):
-        tr = folds[folds.fold != fold].reset_index(drop=True)
-        va = folds[folds.fold == fold].reset_index(drop=True)
+    for fold, (tr, va) in enumerate(folds):
+        print(
+            f"fold {fold + 1}/{len(folds)}: train={len(tr)}, val={len(va)}, "
+            f"seed={seed}"
+        )
         model = UNet34(pretrained=cfg["model"].get("pretrained", True)).to(device)
         loss_fn = build_loss(cfg["loss"])
 
         for size in cfg["training"]["sizes"]:
             bs = cfg["training"]["batch_size"]
             tr_dl = make_loader(tr, size, True, bs, cfg["data"].get("num_workers", 2),
-                                device.type == "cuda")
+                                device.type == "cuda", seed=seed)
             va_dl = make_loader(va, size, False, bs, cfg["data"].get("num_workers", 2),
-                                device.type == "cuda")
+                                device.type == "cuda", seed=seed)
             train_resolution(
                 model, tr_dl, va_dl, loss_fn, cfg["optimizer"], device,
                 frozen_epochs=cfg["training"]["frozen_epochs"],
@@ -54,7 +66,8 @@ def main():
             )
 
         final_dl = make_loader(va, max(cfg["training"]["sizes"]), False, cfg["training"]["batch_size"],
-                               cfg["data"].get("num_workers", 2), device.type == "cuda")
+                               cfg["data"].get("num_workers", 2), device.type == "cuda",
+                               seed=seed)
         metrics = evaluate([model], final_dl, device, include_hd95=True)
         ckpt_dir = Path(cfg["artifacts"].get("final_checkpoint_root", "checkpoints/final/unet34")) / f"fold_{int(fold)+1}"
         save_checkpoint(ckpt_dir / f"{args.tag}_best.pt", model, fold=int(fold), metrics=metrics)
