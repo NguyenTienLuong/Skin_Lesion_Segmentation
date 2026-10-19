@@ -41,7 +41,7 @@ def main():
         for size in cfg["training"]["sizes"]:
             bs = cfg["training"]["batch_size"]
             tr_dl = make_loader(tr, size, True, bs, cfg["data"].get("num_workers", 2),
-                                device.type == "cuda", cfg.get("augmentation", {}))
+                                device.type == "cuda")
             va_dl = make_loader(va, size, False, bs, cfg["data"].get("num_workers", 2),
                                 device.type == "cuda")
             train_resolution(

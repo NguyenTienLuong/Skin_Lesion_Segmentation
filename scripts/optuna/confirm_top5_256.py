@@ -46,7 +46,7 @@ def main():
         loss_fn = build_loss(sampled["loss"])
         bs = sampled["batch_size"]
         tr_dl = make_loader(tr, 256, True, bs, cfg["data"].get("num_workers", 2),
-                            device.type == "cuda", cfg.get("augmentation", {}))
+                            device.type == "cuda")
         va_dl = make_loader(va, 256, False, bs, cfg["data"].get("num_workers", 2),
                             device.type == "cuda")
         hist = train_resolution(

@@ -41,7 +41,7 @@ BN = nn.BatchNorm2d
 
 def freeze_encoder(model: UNet34) -> None:
     """Mapping notebook: freeze toàn encoder, nhưng BN encoder vẫn cho học ở frozen stage."""
-    for module in model.encoder_modules():
+    for module in model.first_layer_group:
         for m in module.modules():
             for p in m.parameters(recurse=False):
                 p.requires_grad = isinstance(m, BN)

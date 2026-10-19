@@ -30,12 +30,10 @@ class UNet34Objective:
         sampled = sample_configuration(trial, allow_batch32=self.cfg["search"].get("allow_batch32", False))
         bs = sampled["batch_size"]
         size = 128
-        augment_cfg = self.cfg.get("augmentation", {})
-
         train_loader = make_loader(
             self.train_records, size=size, train=True, batch_size=bs,
             num_workers=self.cfg["data"].get("num_workers", 2),
-            pin_memory=self.device.type == "cuda", augment_cfg=augment_cfg,
+            pin_memory=self.device.type == "cuda",
         )
         val_loader = make_loader(
             self.val_records, size=size, train=False, batch_size=bs,
