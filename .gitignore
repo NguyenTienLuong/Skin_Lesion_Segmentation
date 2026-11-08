@@ -9,3 +9,4 @@ Chien_luoc_Training_Optuna_Pruner_UNet34_ISIC2018.docx
 data/*
 baseline_unet34_kaggle.ipynb
 baseline_unet34_kaggle.ipynb
+checkpoints/*
