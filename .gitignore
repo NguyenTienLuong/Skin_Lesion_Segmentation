@@ -10,3 +10,4 @@ data/*
 baseline_unet34_kaggle.ipynb
 baseline_unet34_kaggle.ipynb
 checkpoints/*
+unet34_boundary_weighted_multiscale_boundary_fusion.ipynb
